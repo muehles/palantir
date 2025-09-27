@@ -1,0 +1,6 @@
+﻿dataset
+input_video
+output_video
+*.png
+*.jpg
+*.pt
