@@ -22,7 +22,6 @@ OUTPUT_DIR = "output_video"
 VIDEO_PATH = INPUT_DIR + "/" + VIDEO_NAME + ".mp4"
 OUTPUT_VIDEO_BOXES = OUTPUT_DIR + "/" + VIDEO_NAME + "_out_boxes.mp4"   # with boxes
 OUTPUT_VIDEO_NOBOX = OUTPUT_DIR + "/" + VIDEO_NAME + "_out_nobox.mp4"   # without boxes
-OUTPUT_CSV = "player_positions.csv"
 YOLO_MODEL = "yolo11s.pt"#"runs/detect/train6/weights/best.pt" #"yolo11s.pt"  # Or yolov11.pt if you have it
 
 OUTPUT_RESOLUTION = (1920, 1080)#(1280, 720)#
@@ -31,8 +30,6 @@ EXCLUDE_KEEPERS = 1  # exclude 1 player on each side (left/right)
 DETECTION_INTERVAL = 30  # run YOLO every N frames
 
 OUTPUT_BOXES = True
-useKalmanZoom = True
-
 SPREAD_FACTOR = 1.2
 
 # === Global for clicks ===
@@ -66,9 +63,6 @@ def get_pitch_polygon(video_path):
         if key == 13:  # ENTER
             break
     cv2.destroyAllWindows()
-
-    # if len(pitch_points) != 4:
-    #     raise ValueError(f"Expected 4 points, got {len(pitch_points)}")
 
     pitch_polygon = np.array(pitch_points, dtype=np.int32)
     return pitch_polygon
@@ -135,9 +129,7 @@ def main():
         OUTPUT_RESOLUTION,
     )
 
-    csv_data = []
     last_detections = []
-
     last_crop_box = None
     prev_half_height = fh/2
 
@@ -182,7 +174,6 @@ def main():
                         last_detections_outside.append([x1, y1, x2, y2])
                         # cv2.rectangle(frame_with_boxes, (x1, y1), (x2, y2), (0, 0, 255), 2)
                         
-
         player_boxes = last_detections
 
         if len(player_boxes) > 0:
@@ -210,15 +201,11 @@ def main():
             # smooth separately
             smoothed_center_x, smoothed_center_y = kf_pan.update([center_x, center_y])
 
-            if useKalmanZoom:
-                if len(player_boxes) >= 3:
-                    smoothed_half_height = kf_zoom.update([half_height])
-                else:
-                    smoothed_half_height = prev_half_height
-
+            if len(player_boxes) >= 3:
+                smoothed_half_height = kf_zoom.update([half_height])
             else:
-                zoom_factor = 0.1  # smoothing factor (0=slow, 1=instant)
-                smoothed_half_height = int(prev_half_height * (1 - zoom_factor) + half_height * zoom_factor)
+                smoothed_half_height = prev_half_height
+
 
             prev_half_height = smoothed_half_height
             smoothed_half_width  = smoothed_half_height * aspect_ratio
@@ -232,12 +219,10 @@ def main():
             crop_center = (clamped_center_x, clamped_center_y)
 
             # Subpixel crop using getRectSubPix
-            cropped_nobox = cv2.getRectSubPix(frame, patchSize=(crop_size[0], crop_size[1]), center=crop_center)
-            # cropped_box = cv2.getRectSubPix(frame_with_boxes, patchSize=(int(crop_size[0]), int(crop_size[1])), center=crop_center)
+            cropped_nobox = cv2.getRectSubPix(frame, patchSize=(int(crop_size[0]), int(crop_size[1])), center=crop_center)
 
             # Resize to output resolution
             resized_nobox = cv2.resize(cropped_nobox, OUTPUT_RESOLUTION, interpolation=cv2.INTER_LINEAR)
-            # resized_box = cv2.resize(cropped_box, OUTPUT_RESOLUTION, interpolation=cv2.INTER_LINEAR)
 
             last_crop_box = (crop_center[0], crop_center[1], smoothed_half_width, smoothed_half_height)
 
@@ -248,13 +233,10 @@ def main():
                 crop_size = (2 * hw, 2 * hh)
                 crop_center = (cx, cy)
                 cropped_nobox = cv2.getRectSubPix(frame, patchSize=(int(crop_size[0]), int(crop_size[1])), center=crop_center)
-                # cropped_box = cv2.getRectSubPix(frame_with_boxes, patchSize=(int(crop_size[0]), int(crop_size[1])), center=crop_center)
                 resized_nobox = cv2.resize(cropped_nobox, OUTPUT_RESOLUTION, interpolation=cv2.INTER_LINEAR)
-                # resized_box = cv2.resize(cropped_box, OUTPUT_RESOLUTION, interpolation=cv2.INTER_LINEAR)
             else:
                 # First frame fallback
                 resized_nobox = cv2.resize(frame, OUTPUT_RESOLUTION, interpolation=cv2.INTER_LINEAR)
-                # resized_box = cv2.resize(frame_with_boxes, OUTPUT_RESOLUTION, interpolation=cv2.INTER_LINEAR)
 
         
         if OUTPUT_BOXES:
@@ -281,12 +263,14 @@ def main():
         out_nobox.write(resized_nobox)
 
     cap.release()
-    # out_boxes.release()
+    if OUTPUT_BOXES:
+        out_boxes.release()
     out_nobox.release()
 
-    print(f"\n✅ Output video with boxes saved: {OUTPUT_VIDEO_BOXES}")
-    print(f"✅ Output video without boxes saved: {OUTPUT_VIDEO_NOBOX}")
+    if OUTPUT_BOXES:
+        print(f"\n✅ Output video with boxes saved: {OUTPUT_VIDEO_BOXES}")
 
+    print(f"✅ Output video without boxes saved: {OUTPUT_VIDEO_NOBOX}")
     print(f"Speed: {frames/(time.time()-start_time)} fps // total time: {time.time()-start_time}")
 
 
